@@ -178,6 +178,6 @@ use wayland_protocols_wlr::output_management::v1::client::zwlr_output_configurat
 use wayland_protocols_wlr::output_management::v1::client::zwlr_output_head_v1::{self, ZwlrOutputHeadV1};
 use wayland_protocols_wlr::output_management::v1::client::zwlr_output_manager_v1::{self, ZwlrOutputManagerV1};
 
-use crate::head::{WlrHead, HeadState, PendingConfig};
+use crate::head::{HeadState, PendingConfig, WlrHead};
 use crate::qt;
 use crate::wayland::WlMsg;

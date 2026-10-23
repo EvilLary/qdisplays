@@ -204,6 +204,7 @@ impl qobject::QDisplays {
 
         self.calc_global_rect();
     }
+
     fn add_head(mut self: Pin<&mut Self>, h: QHead) {
         let row = self.heads.len() as i32;
 
@@ -259,28 +260,16 @@ impl qobject::QDisplays {
                 recalc = head.set_enabled(value);
             },
             Roles::CurrentModeIndex => {
-                if head.set_mode(value) {
-                    recalc = true;
-                    changed_roles.append(Roles::Geometry as i32);
-                }
+                recalc = head.set_mode(value);
             },
             Roles::Position => {
-                if head.set_position(value) {
-                    recalc = true;
-                    changed_roles.append(Roles::Geometry as i32);
-                }
+                recalc = head.set_position(value);
             },
             Roles::Transform => {
-                if head.set_transform(value) {
-                    recalc = true;
-                    changed_roles.append(Roles::Geometry as i32);
-                }
+                recalc = head.set_transform(value);
             },
             Roles::Scale => {
-                if head.set_scale(value) {
-                    recalc = true;
-                    changed_roles.append(Roles::Geometry as i32);
-                }
+                recalc = head.set_scale(value);
             },
             Roles::AdaptiveSync => {
                 head.set_adaptive_sync(value);
@@ -288,14 +277,15 @@ impl qobject::QDisplays {
             _ => return false,
         }
 
-        let idx = self.as_ref().index(row, 0, &Default::default());
-        self.as_mut().data_changed(&idx, &idx, &changed_roles);
-
         if recalc {
             self.as_mut().calc_global_rect();
+            changed_roles.append(Roles::Geometry as i32);
         }
 
         self.as_mut().has_changes_changed();
+
+        let idx = self.as_ref().index(row, 0, &Default::default());
+        self.as_mut().data_changed(&idx, &idx, &changed_roles);
 
         true
     }
@@ -328,22 +318,23 @@ impl qobject::QDisplays {
         }
     }
 
+    #[rustfmt::skip]
     fn role_names(&self) -> qobject::QHash_i32_QByteArray {
         let mut roles = qobject::QHash_i32_QByteArray::default();
-        roles.insert(Roles::Name as i32, "name".into());
-        roles.insert(Roles::Description as i32, "description".into());
-        roles.insert(Roles::Make as i32, "make".into());
-        roles.insert(Roles::ModelName as i32, "modelName".into());
-        roles.insert(Roles::SerialNumber as i32, "serialNumber".into());
-        roles.insert(Roles::PhysicalSize as i32, "physicalSize".into());
-        roles.insert(Roles::Enabled as i32, "enabled".into());
+        roles.insert(Roles::Name             as i32, "name".into());
+        roles.insert(Roles::Description      as i32, "description".into());
+        roles.insert(Roles::Make             as i32, "make".into());
+        roles.insert(Roles::ModelName        as i32, "modelName".into());
+        roles.insert(Roles::SerialNumber     as i32, "serialNumber".into());
+        roles.insert(Roles::PhysicalSize     as i32, "physicalSize".into());
+        roles.insert(Roles::Enabled          as i32, "enabled".into());
         roles.insert(Roles::CurrentModeIndex as i32, "currentModeIndex".into());
-        roles.insert(Roles::Geometry as i32, "geometry".into());
-        roles.insert(Roles::Transform as i32, "transform".into());
-        roles.insert(Roles::Scale as i32, "scale".into());
-        roles.insert(Roles::Position as i32, "position".into());
-        roles.insert(Roles::AdaptiveSync as i32, "adaptiveSync".into());
-        roles.insert(Roles::Modes as i32, "modes".into());
+        roles.insert(Roles::Geometry         as i32, "geometry".into());
+        roles.insert(Roles::Transform        as i32, "transform".into());
+        roles.insert(Roles::Scale            as i32, "scale".into());
+        roles.insert(Roles::Position         as i32, "position".into());
+        roles.insert(Roles::AdaptiveSync     as i32, "adaptiveSync".into());
+        roles.insert(Roles::Modes            as i32, "modes".into());
         roles
     }
 
@@ -381,22 +372,23 @@ pub enum Roles {
 impl TryFrom<i32> for Roles {
     type Error = ();
 
+    #[rustfmt::skip]
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            v if v == Roles::Name as i32 => Ok(Roles::Name),
-            v if v == Roles::Description as i32 => Ok(Roles::Description),
-            v if v == Roles::Make as i32 => Ok(Roles::Make),
-            v if v == Roles::ModelName as i32 => Ok(Roles::ModelName),
-            v if v == Roles::SerialNumber as i32 => Ok(Roles::SerialNumber),
-            v if v == Roles::PhysicalSize as i32 => Ok(Roles::PhysicalSize),
-            v if v == Roles::Enabled as i32 => Ok(Roles::Enabled),
-            v if v == Roles::CurrentModeIndex as i32 => Ok(Roles::CurrentModeIndex),
-            v if v == Roles::Geometry as i32 => Ok(Roles::Geometry),
-            v if v == Roles::Transform as i32 => Ok(Roles::Transform),
-            v if v == Roles::Position as i32 => Ok(Roles::Position),
-            v if v == Roles::Scale as i32 => Ok(Roles::Scale),
-            v if v == Roles::AdaptiveSync as i32 => Ok(Roles::AdaptiveSync),
-            v if v == Roles::Modes as i32 => Ok(Roles::Modes),
+            v if v == Roles::Name              as i32 => Ok(Roles::Name),
+            v if v == Roles::Description       as i32 => Ok(Roles::Description),
+            v if v == Roles::Make              as i32 => Ok(Roles::Make),
+            v if v == Roles::ModelName         as i32 => Ok(Roles::ModelName),
+            v if v == Roles::SerialNumber      as i32 => Ok(Roles::SerialNumber),
+            v if v == Roles::PhysicalSize      as i32 => Ok(Roles::PhysicalSize),
+            v if v == Roles::Enabled           as i32 => Ok(Roles::Enabled),
+            v if v == Roles::CurrentModeIndex  as i32 => Ok(Roles::CurrentModeIndex),
+            v if v == Roles::Geometry          as i32 => Ok(Roles::Geometry),
+            v if v == Roles::Transform         as i32 => Ok(Roles::Transform),
+            v if v == Roles::Position          as i32 => Ok(Roles::Position),
+            v if v == Roles::Scale             as i32 => Ok(Roles::Scale),
+            v if v == Roles::AdaptiveSync      as i32 => Ok(Roles::AdaptiveSync),
+            v if v == Roles::Modes             as i32 => Ok(Roles::Modes),
             _ => Err(()),
         }
     }

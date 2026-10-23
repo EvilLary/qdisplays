@@ -9,6 +9,4 @@ fn main() {
     .qt_module("QuickControls2")
     .files(&["src/qt.rs"])
     .build();
-
-    println!("cargo:rustc-link-arg=-fuse-ld=lld");
 }

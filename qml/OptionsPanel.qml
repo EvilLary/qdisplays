@@ -144,7 +144,6 @@ StackLayout {
                 }
                 QQC2.Switch {
                     Layout.preferredWidth: panel.fieldWidth
-
                     checked: panel.model.adaptiveSync
                     onToggled: panel.model.adaptiveSync = checked
                 }
