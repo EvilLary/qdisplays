@@ -1,0 +1,15 @@
+[package]
+name = "qdisplays"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cxx = "1.0.205"
+cxx-qt = "0.10.0"
+cxx-qt-lib = { version = "0.10.0", features = ["qt_full"] }
+wayland-client = { version = "0.31.15" }
+wayland-protocols-wlr = { version = "0.3", features = ["client", "wayland-client"] }
+rustix = { version = "1", features = ["event", "std"] }
+
+[build-dependencies]
+cxx-qt-build = "0.10.0"

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=QDisplays
+GenericName=Displays configuration
+Type=Application
+Categories=Settings;DesktopSettings;
+Exec=qdisplays
+Icon=monitor

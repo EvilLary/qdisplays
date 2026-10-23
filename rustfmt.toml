@@ -1,0 +1,14 @@
+style_edition = "2024"
+fn_params_layout="Tall"
+fn_single_line=true
+force_multiline_blocks=true
+match_block_trailing_comma=true
+imports_granularity="Module"
+max_width=175
+# NOT_STABLE
+# force_multiline_blocks=true
+# imports_layout="Vertical"
+
+#attr_fn_like_width=100000000000000000
+# use_small_heuristics="Off"
+#struct_field_align_threshold=20
