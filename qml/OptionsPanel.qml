@@ -65,6 +65,7 @@ StackLayout {
                     Layout.preferredWidth: panel.fieldWidth
 
                     model: panel.model.modes
+                    textRole: "display"
                     currentIndex: panel.model.currentModeIndex
                     onActivated: i => panel.model.currentModeIndex = i
                 }

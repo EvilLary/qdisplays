@@ -9,7 +9,7 @@ static UPD_ROLES: LazyLock<QList<i32>> = LazyLock::new(|| {
         Roles::Scale as i32,
         Roles::AdaptiveSync as i32,
         Roles::CurrentModeIndex as i32,
-        Roles::Modes as i32,
+        // Roles::Modes as i32,
     ])
 });
 
@@ -30,9 +30,8 @@ mod qobject {
         type QRect = cxx_qt_lib::QRect;
     }
 
-    unsafe extern "C++Qt" {
+    unsafe extern "C++" {
         include!(<QtCore/QAbstractListModel>);
-        #[qobject]
         type QAbstractListModel;
     }
 
@@ -52,8 +51,6 @@ mod qobject {
         #[qproperty(QRect, global_rect, cxx_name = "globalRect", READ, NOTIFY)]
         #[qproperty(bool, has_changes, cxx_name = "hasChanges", READ = get_has_changes, NOTIFY)]
         type QDisplays = super::QDisplaysRs;
-
-        fn clear_model(self: Pin<&mut Self>);
 
         fn get_has_changes(self: &QDisplays) -> bool;
 
@@ -88,33 +85,32 @@ mod qobject {
         fn index(self: &QDisplays, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
 
         #[inherit]
-        #[qsignal]
-        #[cxx_name = "dataChanged"]
-        fn data_changed(self: Pin<&mut QDisplays>, top_left: &QModelIndex, bottom_right: &QModelIndex, roles: &QList_i32);
+        #[rust_name = "data_changed"]
+        fn dataChanged(self: Pin<&mut QDisplays>, top_left: &QModelIndex, bottom_right: &QModelIndex, roles: &QList_i32);
 
         #[inherit]
-        #[cxx_name = "beginInsertRows"]
-        fn begin_insert_rows(self: Pin<&mut QDisplays>, parent: &QModelIndex, first: i32, last: i32);
+        #[rust_name = "begin_insert_rows"]
+        fn beginInsertRows(self: Pin<&mut QDisplays>, parent: &QModelIndex, first: i32, last: i32);
 
         #[inherit]
-        #[cxx_name = "endInsertRows"]
-        fn end_insert_rows(self: Pin<&mut QDisplays>);
+        #[rust_name = "end_insert_rows"]
+        fn endInsertRows(self: Pin<&mut QDisplays>);
 
         #[inherit]
-        #[cxx_name = "beginRemoveRows"]
-        fn begin_remove_rows(self: Pin<&mut QDisplays>, parent: &QModelIndex, first: i32, last: i32);
+        #[rust_name = "begin_remove_rows"]
+        fn beginRemoveRows(self: Pin<&mut QDisplays>, parent: &QModelIndex, first: i32, last: i32);
 
         #[inherit]
-        #[cxx_name = "endRemoveRows"]
-        fn end_remove_rows(self: Pin<&mut QDisplays>);
+        #[rust_name = "end_remove_rows"]
+        fn endRemoveRows(self: Pin<&mut QDisplays>);
 
         #[inherit]
-        #[cxx_name = "beginResetModel"]
-        fn begin_reset_model(self: Pin<&mut QDisplays>);
+        #[rust_name = "begin_reset_model"]
+        fn beginResetModel(self: Pin<&mut QDisplays>);
 
         #[inherit]
-        #[cxx_name = "endResetModel"]
-        fn end_reset_model(self: Pin<&mut QDisplays>);
+        #[rust_name = "end_reset_model"]
+        fn endResetModel(self: Pin<&mut QDisplays>);
     }
 
     impl cxx_qt::Threading for QDisplays {}
@@ -143,7 +139,7 @@ impl qobject::QDisplays {
         let len = self.as_ref().rust().heads.len() as i32;
         let start = self.index(0, 0, &Default::default());
         let end = self.index(len - 1, 0, &Default::default());
-        self.as_mut().data_changed(&start, &end, &*UPD_ROLES);
+        self.as_mut().data_changed(&start, &end, &UPD_ROLES);
         self.as_mut().calc_global_rect();
         self.as_mut().has_changes_changed();
     }
@@ -184,11 +180,11 @@ impl qobject::QDisplays {
         head.adaptive_sync = update.adaptive_sync;
         head.current_mode_index = update.current_mode_index;
         if let Some(m) = update.modes {
-            (head.modes, head.modes_strings) = m;
+            head.set_modes(m);
         }
 
         let idx = self.index(row as i32, 0, &Default::default());
-        self.as_mut().data_changed(&idx, &idx, &*UPD_ROLES);
+        self.as_mut().data_changed(&idx, &idx, &UPD_ROLES);
 
         self.as_mut().calc_global_rect();
     }
@@ -314,7 +310,7 @@ impl qobject::QDisplays {
             Roles::Position         => QVariant::from(&h.position()),
             Roles::Scale            => QVariant::from(&h.scale()),
             Roles::AdaptiveSync     => QVariant::from(&h.adaptive_sync()),
-            Roles::Modes            => QVariant::from(&h.modes_strings),
+            Roles::Modes            => QVariant::from(&h.modes_qobject()),
         }
     }
 

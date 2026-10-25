@@ -3,6 +3,7 @@ static THREAD_INVOKER: OnceLock<ThreadInvoker> = OnceLock::new();
 pub enum WlCommand {
     GetHeads,
     ApplyConfiguration(Vec<(u32, PendingConfig)>),
+    Exit,
 }
 
 pub enum WlMsg {
@@ -24,7 +25,7 @@ pub fn request(r: WlCommand) {
     });
 }
 
-pub fn start_wayland() -> Result<(), Box<dyn std::error::Error>> {
+pub fn start_wayland() -> Result<JoinHandle<()>, Box<dyn std::error::Error>> {
     let conn = Connection::connect_to_env()?;
     let (globals, event_q) = registry_queue_init::<WlState>(&conn)?;
     let manager = globals.bind::<ZwlrOutputManagerV1, _, _>(&event_q.handle(), 2..=ZwlrOutputManagerV1::interface().version, ())?;
@@ -38,13 +39,11 @@ pub fn start_wayland() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = WlState::new(manager);
 
-    std::thread::spawn(move || {
+    Ok(thread::spawn(move || {
         if let Err(e) = enter_loop(state, conn, event_q, ev_fd, rx) {
             qt::wayland_message(WlMsg::Fatal(QString::from(&e.to_string())));
         }
-    });
-
-    Ok(())
+    }))
 }
 
 fn enter_loop(mut state: WlState, conn: Connection, mut q: EventQueue<WlState>, ev_fd: OwnedFd, rx: Receiver<WlCommand>) -> Result<(), Box<dyn std::error::Error>> {
@@ -96,7 +95,7 @@ fn enter_loop(mut state: WlState, conn: Connection, mut q: EventQueue<WlState>, 
 
         if pfds[1].revents().contains(PollFlags::IN) {
             let mut buf = [0u8; 8];
-            match rustix::io::read(&event_fd, &mut buf) {
+            match rustix::io::read(event_fd, &mut buf) {
                 Ok(_) => {},
                 Err(e) => match e.kind() {
                     ErrorKind::WouldBlock | ErrorKind::Interrupted => continue,
@@ -108,6 +107,7 @@ fn enter_loop(mut state: WlState, conn: Connection, mut q: EventQueue<WlState>, 
                 match cmd {
                     WlCommand::GetHeads => qt::all_heads(state.heads.values().map(|h| h.into()).collect()),
                     WlCommand::ApplyConfiguration(confs) => state.apply_configuration(q.handle(), confs),
+                    WlCommand::Exit => return Ok(()),
                 }
             }
         }
@@ -125,10 +125,11 @@ use wayland_client::{Connection, EventQueue, Proxy};
 
 use wayland_protocols_wlr::output_management::v1::client::zwlr_output_manager_v1::ZwlrOutputManagerV1;
 
-use std::io::{self, ErrorKind};
+use std::io::ErrorKind;
 use std::os::fd::{AsFd, OwnedFd};
 use std::sync::OnceLock;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread::{self, JoinHandle};
 
 use crate::head::PendingConfig;
 use crate::qt;

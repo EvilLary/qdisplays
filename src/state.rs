@@ -54,11 +54,8 @@ impl WlState {
                 head_config.set_adaptive_sync(v);
             }
 
-            if let Some(v) = c.mode.take() {
-                h.modes
-                    .iter()
-                    .find_map(|m| (m.wlr.id().protocol_id() == v).then(|| &m.wlr))
-                    .map(|w| head_config.set_mode(w));
+            if let Some(w) = h.modes.iter().find(|m| Some(m.wlr.id().protocol_id()) == c.mode).map(|m| &m.wlr) {
+                head_config.set_mode(w)
             }
         }
 
@@ -116,7 +113,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for WlState {
                         },
                         HeadState::Updated => {
                             h.state = HeadState::Ready;
-                            qt::update_head(h.into_update());
+                            qt::update_head(h.get_update());
                             true
                         },
                         HeadState::Removed => {

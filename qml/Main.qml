@@ -93,6 +93,7 @@ Kirigami.ApplicationWindow {
 
         footer: Kirigami.NavigationTabBar {
             id: navBar
+            // currentIndex: optionsPanel.currentIndex
             actions: Array.from({
                 length: tabInstantiator.count
             }, (_, i) => tabInstantiator.objectAt(i))
@@ -107,7 +108,6 @@ Kirigami.ApplicationWindow {
 
                 text: model.name
                 icon.name: "monitor"
-                checkable: true
                 checked: optionsPanel.currentIndex === index
                 onTriggered: optionsPanel.currentIndex = index
             }

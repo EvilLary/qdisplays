@@ -1,4 +1,15 @@
-#[derive(Default)]
+fn calc_geometry(size: QSize, pos: QPoint, scale: f64, transform: u32) -> QRect {
+    let (w, h) = match transform {
+        t if t % 2 == 0 => (size.width(), size.height()),
+        _ => (size.height(), size.width()),
+    };
+
+    let h = ((h as f64) / scale).round() as i32;
+    let w = ((w as f64) / scale).round() as i32;
+
+    QRect::new(pos.x(), pos.y(), w, h)
+}
+
 pub struct QHead {
     pub id: u32,
     pub name: QString,
@@ -17,24 +28,29 @@ pub struct QHead {
 
     pub current_mode: u32,
     pub current_mode_index: i32,
-    // FIXME: use a model for both of these
-    pub modes: Vec<QMode>,
-    pub modes_strings: QList<QString>,
-
+    pub modes: UniquePtr<ModesModel>,
     pub pending_config: PendingConfig,
 }
 
 impl QHead {
+    pub fn modes_qobject(&self) -> QObjectMutPtr {
+        unsafe { QObjectMutPtr::from_raw(self.modes.as_mut_ptr().cast()) }
+    }
+
+    pub fn set_modes(&mut self, modes: Vec<QMode>) {
+        self.modes.as_mut().unwrap().set_modes(modes)
+    }
+
     pub fn set_mode(&mut self, v: &QVariant) -> bool {
         let Some(v) = v.value::<i32>() else {
             return false;
         };
 
-        let Some(mode) = self.modes.get(v as usize) else {
+        let Some(mode) = self.modes().get(v as usize) else {
             return false;
         };
 
-        self.pending_config.mode = (v != self.current_mode_index).then_some(mode.id);
+        self.pending_config.mode = (mode.id != self.current_mode).then_some(mode.id);
         true
     }
 
@@ -85,13 +101,18 @@ impl QHead {
         true
     }
 
+    pub fn modes(&self) -> &[QMode] {
+        &self.modes.as_ref().unwrap().modes
+    }
+
     #[inline]
     pub fn current_mode(&self) -> Option<(usize, &QMode)> {
         let idx = self.current_mode_index as usize;
+        let modes = self.modes();
         self.pending_config
             .mode
-            .and_then(|id| self.modes.iter().enumerate().find(|m| m.1.id == id))
-            .or_else(|| self.modes.get(idx).and_then(|m| Some((idx, m))))
+            .and_then(|id| modes.iter().enumerate().find(|m| m.1.id == id))
+            .or_else(|| modes.get(idx).map(|m| (idx, m)))
     }
 
     #[inline]
@@ -128,19 +149,12 @@ impl QHead {
             return self.geometry.clone();
         };
 
-        let (w, h) = match self.transform() {
-            t if t % 2 == 0 => (mode.width, mode.height),
-            _ => (mode.height, mode.width),
-        };
-
-        let scale = self.scale();
-        let pos = self.position();
-        let h = ((h as f64) / scale).round() as i32;
-        let w = ((w as f64) / scale).round() as i32;
-
-        QRect::new(pos.x(), pos.y(), w, h)
+        calc_geometry(mode.size.clone(), self.position(), self.scale(), self.transform())
     }
 }
+
+// SAFETY: idk
+unsafe impl Send for QHead {}
 
 #[derive(Default, Clone)]
 pub struct PendingConfig {
@@ -177,7 +191,7 @@ pub struct HeadUpdate {
     pub adaptive_sync: bool,
 
     pub current_mode_index: i32,
-    pub modes: Option<(Vec<QMode>, QList<QString>)>,
+    pub modes: Option<Vec<QMode>>,
 }
 
 #[derive(Default, PartialEq, Eq)]
@@ -190,11 +204,11 @@ pub enum HeadState {
 }
 
 pub struct WlrHead {
-    pub name: String,
-    pub description: String,
-    pub make: String,
-    pub model: String,
-    pub serial_number: String,
+    pub name: Box<str>,
+    pub description: Box<str>,
+    pub make: Box<str>,
+    pub model: Box<str>,
+    pub serial_number: Box<str>,
     pub physical_size: QSize,
 
     pub enabled: bool,
@@ -208,46 +222,30 @@ pub struct WlrHead {
     pub geometry: QRect,
 
     pub state: HeadState,
-    pub recheck_mode_index: bool,
-    pub recalc_geometry: bool,
+    pub mode_index_changed: bool,
+    pub geometry_changed: bool,
     pub modes_changed: bool,
 
     pub wlr: ZwlrOutputHeadV1,
 }
 
 impl WlrHead {
-    pub fn builds_qmodes(&self) -> (Vec<QMode>, QList<QString>) {
-        use std::fmt::Write;
-        let mut string_list = QList::default();
-        string_list.reserve(self.modes.len() as isize);
-
-        let mut buf = String::with_capacity(16);
-        for m in &self.modes {
-            buf.clear();
-            let _ = write!(buf, "{}x{}@{:.2}Hz", m.width, m.height, (m.refresh as f32) / 1000.0);
-            string_list.append(QString::from(&buf));
-        }
-
-        (self.modes.iter().map(Into::into).collect(), string_list)
-    }
-
     pub fn on_done(&mut self) {
-        if self.recalc_geometry {
-            self.calc_geometry();
+        if self.geometry_changed {
+            self.recalc_geometry();
         }
-        if self.recheck_mode_index {
-            self.recheck_mode_index = false;
+
+        if self.mode_index_changed {
+            self.mode_index_changed = false;
             self.current_mode_index = self.current_mode().map(|(i, _)| i as i32).unwrap_or(-1);
         }
     }
 
-    pub fn into_update(&mut self) -> HeadUpdate {
-        let modes = if self.modes_changed {
+    pub fn get_update(&mut self) -> HeadUpdate {
+        let modes = self.modes_changed.then(|| {
             self.modes_changed = false;
-            Some(self.builds_qmodes())
-        } else {
-            None
-        };
+            self.modes.iter().map(Into::into).collect()
+        });
 
         HeadUpdate {
             id: self.wlr.id().protocol_id(),
@@ -272,7 +270,7 @@ impl WlrHead {
             physical_size: Default::default(),
             enabled: Default::default(),
             current_mode: Default::default(),
-            current_mode_index: Default::default(),
+            current_mode_index: -1,
             position: Default::default(),
             transform: Default::default(),
             scale: Default::default(),
@@ -280,8 +278,8 @@ impl WlrHead {
             modes: Default::default(),
             geometry: Default::default(),
             state: Default::default(),
-            recheck_mode_index: Default::default(),
-            recalc_geometry: Default::default(),
+            mode_index_changed: Default::default(),
+            geometry_changed: Default::default(),
             modes_changed: Default::default(),
             wlr,
         }
@@ -291,53 +289,41 @@ impl WlrHead {
         self.modes.iter().enumerate().find(|(_, m)| m.id() == self.current_mode)
     }
 
-    pub fn calc_geometry(&mut self) {
-        self.recalc_geometry = false;
+    pub fn recalc_geometry(&mut self) {
+        self.geometry_changed = false;
         let Some((_, mode)) = self.current_mode() else {
             return;
         };
 
-        // 1 3 5 7 transforms are flipped
-        let (w, h) = match self.transform {
-            t if t % 2 == 0 => (mode.width, mode.height),
-            _ => (mode.height, mode.width),
-        };
-
-        let scale = if self.scale > 0.0 { self.scale } else { 1.0 };
-        let h = ((h as f64) / scale).round() as i32;
-        let w = ((w as f64) / scale).round() as i32;
-
-        self.geometry = QRect::new(self.position.x(), self.position.y(), w, h);
+        self.geometry = calc_geometry(mode.size.clone(), self.position.clone(), self.scale, self.transform);
     }
 }
 
-impl Into<QHead> for &mut WlrHead {
-    fn into(self) -> QHead {
-        <&WlrHead as Into<QHead>>::into(self)
+impl From<&mut WlrHead> for QHead {
+    fn from(val: &mut WlrHead) -> Self {
+        <&WlrHead as Into<QHead>>::into(val)
     }
 }
 
-impl Into<QHead> for &WlrHead {
-    fn into(self) -> QHead {
-        let (modes, modes_strings) = self.builds_qmodes();
+impl From<&WlrHead> for QHead {
+    fn from(val: &WlrHead) -> Self {
         QHead {
-            id: self.wlr.id().protocol_id(),
-            name: QString::from(&self.name),
-            description: QString::from(&self.description),
-            make: QString::from(&self.make),
-            model: QString::from(&self.model),
-            serial_number: QString::from(&self.serial_number),
-            physical_size: self.physical_size.clone(),
-            enabled: self.enabled,
-            position: self.position.clone(),
-            geometry: self.geometry.clone(),
-            transform: self.transform,
-            scale: self.scale,
-            adaptive_sync: self.adaptive_sync,
-            current_mode: self.current_mode,
-            current_mode_index: self.current_mode_index,
-            modes,
-            modes_strings,
+            id: val.wlr.id().protocol_id(),
+            name: QString::from(val.name.as_ref()),
+            description: QString::from(val.description.as_ref()),
+            make: QString::from(val.make.as_ref()),
+            model: QString::from(val.model.as_ref()),
+            serial_number: QString::from(val.serial_number.as_ref()),
+            physical_size: val.physical_size.clone(),
+            enabled: val.enabled,
+            position: val.position.clone(),
+            geometry: val.geometry.clone(),
+            transform: val.transform,
+            scale: val.scale,
+            adaptive_sync: val.adaptive_sync,
+            current_mode: val.current_mode,
+            current_mode_index: val.current_mode_index,
+            modes: ModesModel::new(val.modes.iter().map(Into::into).collect()),
             pending_config: Default::default(),
         }
     }
@@ -357,50 +343,50 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for WlState {
 
         match event {
             zwlr_output_head_v1::Event::Name { name } => {
-                head.name = name;
+                head.name = name.into_boxed_str();
             },
             zwlr_output_head_v1::Event::Description { description } => {
-                head.description = description;
+                head.description = description.into_boxed_str();
             },
             zwlr_output_head_v1::Event::PhysicalSize { width, height } => {
                 head.physical_size = QSize::new(width, height);
             },
             zwlr_output_head_v1::Event::Make { make } => {
-                head.make = make;
+                head.make = make.into_boxed_str();
             },
             zwlr_output_head_v1::Event::Model { model } => {
-                head.model = model;
+                head.model = model.into_boxed_str();
             },
             zwlr_output_head_v1::Event::SerialNumber { serial_number } => {
-                head.serial_number = serial_number;
+                head.serial_number = serial_number.into_boxed_str();
             },
             zwlr_output_head_v1::Event::Mode { mode } => {
                 this.modes_map.insert(mode.id().protocol_id(), wlr_head.id().protocol_id());
                 head.modes_changed = true;
-                head.recheck_mode_index = true;
+                head.mode_index_changed = true;
                 head.modes.push(WlrMode::new(mode));
             },
             zwlr_output_head_v1::Event::Enabled { enabled } => {
                 head.enabled = enabled == 1;
             },
             zwlr_output_head_v1::Event::CurrentMode { mode } => {
-                head.recalc_geometry = true;
-                head.recheck_mode_index = true;
+                head.geometry_changed = true;
+                head.mode_index_changed = true;
                 head.current_mode = mode.id().protocol_id();
             },
             zwlr_output_head_v1::Event::Position { x, y } => {
-                head.recalc_geometry = true;
+                head.geometry_changed = true;
                 head.position = QPoint::new(x, y);
             },
             zwlr_output_head_v1::Event::Transform { transform } => {
                 let WEnum::Value(transform) = transform else {
                     return;
                 };
-                head.recalc_geometry = true;
+                head.geometry_changed = true;
                 head.transform = transform as u32;
             },
             zwlr_output_head_v1::Event::Scale { scale } => {
-                head.recalc_geometry = true;
+                head.geometry_changed = true;
                 head.scale = scale;
             },
             zwlr_output_head_v1::Event::AdaptiveSync { state } => {
@@ -419,12 +405,13 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for WlState {
     ]);
 }
 
-use cxx_qt_lib::{QList, QPoint, QRect, QSize, QString, QVariant};
+use cxx::UniquePtr;
+use cxx_qt_lib::{QObjectMutPtr, QPoint, QRect, QSize, QString, QVariant};
 
 use wayland_client::{Connection, Dispatch, Proxy, QueueHandle, WEnum};
 
 use wayland_protocols_wlr::output_management::v1::client::zwlr_output_head_v1::{self, ZwlrOutputHeadV1};
 use wayland_protocols_wlr::output_management::v1::client::zwlr_output_mode_v1::ZwlrOutputModeV1;
 
-use crate::mode::{QMode, WlrMode};
+use crate::mode::{ModesModel, QMode, WlrMode};
 use crate::state::WlState;
