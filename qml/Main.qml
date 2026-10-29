@@ -93,7 +93,7 @@ Kirigami.ApplicationWindow {
 
         footer: Kirigami.NavigationTabBar {
             id: navBar
-            // currentIndex: optionsPanel.currentIndex
+            currentIndex: 0
             actions: Array.from({
                 length: tabInstantiator.count
             }, (_, i) => tabInstantiator.objectAt(i))
@@ -108,8 +108,14 @@ Kirigami.ApplicationWindow {
 
                 text: model.name
                 icon.name: "monitor"
-                checked: optionsPanel.currentIndex === index
-                onTriggered: optionsPanel.currentIndex = index
+                checked: navBar.currentIndex === index
+                Component.onDestruction: {
+                    if (navBar.currentIndex === index) {
+                        navBar.currentIndex = Math.max(0, index - 1);
+                    } else if (navBar.currentIndex > index) {
+                        navBar.currentIndex--;
+                    }
+                }
             }
         }
 
@@ -124,7 +130,7 @@ Kirigami.ApplicationWindow {
                 Layout.margins: Kirigami.Units.largeSpacing
 
                 selectedIndex: optionsPanel.currentIndex
-                onOutputSelected: i => optionsPanel.currentIndex = i
+                onOutputSelected: i => navBar.currentIndex = i
             }
 
             Kirigami.Separator {
@@ -134,6 +140,7 @@ Kirigami.ApplicationWindow {
             OptionsPanel {
                 id: optionsPanel
 
+                currentIndex: navBar.currentIndex
                 Layout.fillWidth: true
                 Layout.maximumWidth: Kirigami.Units.gridUnit * 30
                 Layout.alignment: Qt.AlignHCenter

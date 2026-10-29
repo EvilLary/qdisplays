@@ -7,9 +7,12 @@ edition = "2024"
 cxx = "1.0.205"
 cxx-qt = "0.10.0"
 cxx-qt-lib = { version = "0.10.0", features = ["qt_full"] }
-wayland-client = { version = "0.31.15" }
-wayland-protocols-wlr = { version = "0.3", features = ["client", "wayland-client"] }
+# wayland-client = { version = "0.31.15" }
+# wayland-protocols-wlr = { version = "0.3", features = ["client", "wayland-client"] }
 rustix = { version = "1", features = ["event", "std"] }
+cxx-qt-lib-extras = "0.10.0"
+wayrs-client = "1.3.1"
+wayrs-protocols = { version = "0.14.11", features = ["wlr-output-management-unstable-v1"] }
 
 [build-dependencies]
 cxx-qt-build = "0.10.0"

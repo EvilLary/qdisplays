@@ -1,6 +1,6 @@
-use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
+use cxx_qt_lib::{QQmlApplicationEngine, QUrl};
+use cxx_qt_lib_extras::QApplication;
 use std::process::ExitCode;
-// TODO: use wayrs instead
 
 mod head;
 mod mode;
@@ -12,7 +12,9 @@ fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     // tbh it's better for the qml singleton to start wayland
     let wl_th = wayland::start_wayland()?;
 
-    let mut app = QGuiApplication::new();
+    // while QGuiApplication is fine, it misses some small features that you'd expect from a
+    // qt destkop app, maybe move to QWidgets instead
+    let mut app = QApplication::new();
     let mut engine = QQmlApplicationEngine::new();
 
     engine

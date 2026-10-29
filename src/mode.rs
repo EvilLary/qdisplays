@@ -66,25 +66,13 @@ impl qobject::ModesModel {
     }
 
     fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        let Some(m) = self.modes.get(index.row() as usize) else {
+        if role != cxx_qt_lib::ItemDataRole::DisplayRole.repr {
             return QVariant::default();
-        };
-
-        use std::cell::Cell;
-        use std::fmt::Write;
-        thread_local! {
-            static BUF: Cell<String> = Cell::new(String::with_capacity(14));
         }
 
-        if role == cxx_qt_lib::ItemDataRole::DisplayRole.repr {
-            let mut buf = BUF.take();
-            buf.clear();
-            let _ = write!(buf, "{}x{}@{:.2}Hz", m.size.width(), m.size.height(), (m.refresh as f32) / 1000.0);
-            let v = QVariant::from(&QString::from(&buf));
-            BUF.set(buf);
-            v
-        } else {
-            QVariant::default()
+        match self.modes.get(index.row() as usize) {
+            Some(m) => m.display.clone(),
+            None => QVariant::default(),
         }
     }
 
@@ -93,35 +81,35 @@ impl qobject::ModesModel {
     }
 }
 
-// at least it's 16B not 64B :)
 #[derive(Default)]
 pub struct QMode {
     pub id: u32,
     pub size: QSize,
-    pub refresh: i32,
+    pub display: QVariant,
 }
 
 pub struct WlrMode {
     pub size: QSize,
     pub refresh: i32,
-    // pub preferred: bool,
     pub wlr: ZwlrOutputModeV1,
 }
 
-// fucking retarded rust, can't auto impl for T, &T & &mut T
 impl From<&WlrMode> for QMode {
     fn from(val: &WlrMode) -> Self {
+        let display = format!("{}x{}@{:.2}Hz", val.size.width(), val.size.height(), (val.refresh as f32) / 1000.0);
+        let display = QVariant::from(&QString::from(&display));
+
         QMode {
             id: val.id(),
             size: val.size.clone(),
-            refresh: val.refresh,
+            display,
         }
     }
 }
 
 impl WlrMode {
     pub fn id(&self) -> u32 {
-        self.wlr.id().protocol_id()
+        self.wlr.id().as_u32()
     }
 
     pub fn new(wlr: ZwlrOutputModeV1) -> Self {
@@ -134,10 +122,12 @@ impl WlrMode {
     }
 }
 
-impl Dispatch<ZwlrOutputModeV1, ()> for WlState {
-    fn event(this: &mut Self, wlr_mode: &ZwlrOutputModeV1, event: <ZwlrOutputModeV1 as Proxy>::Event, _data: &(), _conn: &Connection, _qhandle: &QueueHandle<Self>) {
-        let mode_id = wlr_mode.id().protocol_id();
-        let Some(head) = this.modes_map.get(&mode_id).and_then(|i| this.heads.get_mut(i)) else {
+impl WlState {
+    pub fn on_mode_event(ctx: EventCtx<Self, ZwlrOutputModeV1>) {
+        let EventCtx { conn, state, proxy, event, .. } = ctx;
+
+        let mode_id = proxy.id().as_u32();
+        let Some(head) = state.modes_map.get(&mode_id).and_then(|i| state.heads.get_mut(i)) else {
             return;
         };
 
@@ -146,19 +136,16 @@ impl Dispatch<ZwlrOutputModeV1, ()> for WlState {
         };
 
         match event {
-            zwlr_output_mode_v1::Event::Size { width, height } => {
-                mode.size = QSize::new(width, height);
+            zwlr_output_mode_v1::Event::Size(s) => {
+                mode.size = QSize::new(s.width, s.height);
                 head.modes_changed = true;
                 // I could check for mode_id against current_mode,
                 // but what if this event was emitted before Head::CurrentMode
                 head.geometry_changed = true;
             },
-            zwlr_output_mode_v1::Event::Refresh { refresh } => {
+            zwlr_output_mode_v1::Event::Refresh(refresh) => {
                 mode.refresh = refresh;
                 head.modes_changed = true;
-            },
-            zwlr_output_mode_v1::Event::Preferred => {
-                // mode.preferred = true;
             },
             zwlr_output_mode_v1::Event::Finished => {
                 if head.current_mode == mode_id {
@@ -166,10 +153,10 @@ impl Dispatch<ZwlrOutputModeV1, ()> for WlState {
                     head.geometry_changed = true;
                 }
 
-                this.modes_map.remove(&mode_id);
+                mode.wlr.release(conn);
+                state.modes_map.remove(&mode_id);
                 head.modes.swap_remove(idx);
                 head.modes_changed = true;
-                wlr_mode.release();
             },
             _ => {},
         }
@@ -185,9 +172,11 @@ use std::pin::Pin;
 use cxx::UniquePtr;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QModelIndex, QSize, QString, QVariant};
-use wayland_client::{Connection, Dispatch, Proxy, QueueHandle};
 
-use wayland_protocols_wlr::output_management::v1::client::zwlr_output_mode_v1::{self, ZwlrOutputModeV1};
+use wayrs_client::object::Proxy;
+use wayrs_client::EventCtx;
+
+use wayrs_protocols::wlr_output_management_unstable_v1::zwlr_output_mode_v1::{self, ZwlrOutputModeV1};
 
 use crate::head::HeadState;
 use crate::state::WlState;

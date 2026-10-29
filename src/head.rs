@@ -204,11 +204,11 @@ pub enum HeadState {
 }
 
 pub struct WlrHead {
-    pub name: Box<str>,
-    pub description: Box<str>,
-    pub make: Box<str>,
-    pub model: Box<str>,
-    pub serial_number: Box<str>,
+    pub name: Box<CStr>,
+    pub description: Box<CStr>,
+    pub make: Box<CStr>,
+    pub model: Box<CStr>,
+    pub serial_number: Box<CStr>,
     pub physical_size: QSize,
 
     pub enabled: bool,
@@ -248,7 +248,7 @@ impl WlrHead {
         });
 
         HeadUpdate {
-            id: self.wlr.id().protocol_id(),
+            id: self.wlr.id().as_u32(),
             enabled: self.enabled,
             position: self.position.clone(),
             geometry: self.geometry.clone(),
@@ -308,12 +308,12 @@ impl From<&mut WlrHead> for QHead {
 impl From<&WlrHead> for QHead {
     fn from(val: &WlrHead) -> Self {
         QHead {
-            id: val.wlr.id().protocol_id(),
-            name: QString::from(val.name.as_ref()),
-            description: QString::from(val.description.as_ref()),
-            make: QString::from(val.make.as_ref()),
-            model: QString::from(val.model.as_ref()),
-            serial_number: QString::from(val.serial_number.as_ref()),
+            id: val.wlr.id().as_u32(),
+            name: QString::from(val.name.to_string_lossy().as_ref()),
+            description: QString::from(val.description.to_string_lossy().as_ref()),
+            make: QString::from(val.make.to_string_lossy().as_ref()),
+            model: QString::from(val.model.to_string_lossy().as_ref()),
+            serial_number: QString::from(val.serial_number.to_string_lossy().as_ref()),
             physical_size: val.physical_size.clone(),
             enabled: val.enabled,
             position: val.position.clone(),
@@ -323,74 +323,75 @@ impl From<&WlrHead> for QHead {
             adaptive_sync: val.adaptive_sync,
             current_mode: val.current_mode,
             current_mode_index: val.current_mode_index,
+            // this shouldn't be created here
             modes: ModesModel::new(val.modes.iter().map(Into::into).collect()),
             pending_config: Default::default(),
         }
     }
 }
 
-impl Dispatch<ZwlrOutputHeadV1, ()> for WlState {
-    fn event(this: &mut Self, wlr_head: &ZwlrOutputHeadV1, event: <ZwlrOutputHeadV1 as Proxy>::Event, _data: &(), _conn: &Connection, _qhandle: &QueueHandle<Self>) {
-        let Some(head) = this.heads.get_mut(&wlr_head.id().protocol_id()) else {
+impl WlState {
+    pub fn on_head_event(ctx: EventCtx<Self, ZwlrOutputHeadV1>) {
+        let EventCtx { conn, state, proxy, event, .. } = ctx;
+
+        let Some(head) = state.heads.get_mut(&proxy.id().as_u32()) else {
             return;
         };
 
         if matches!(event, zwlr_output_head_v1::Event::Finished) {
             head.state = HeadState::Removed;
-            wlr_head.release();
+            proxy.release(conn);
             return;
         }
 
         match event {
-            zwlr_output_head_v1::Event::Name { name } => {
-                head.name = name.into_boxed_str();
+            zwlr_output_head_v1::Event::Name(name) => {
+                head.name = name.into_boxed_c_str();
             },
-            zwlr_output_head_v1::Event::Description { description } => {
-                head.description = description.into_boxed_str();
+            zwlr_output_head_v1::Event::Description(description) => {
+                head.description = description.into_boxed_c_str();
             },
-            zwlr_output_head_v1::Event::PhysicalSize { width, height } => {
-                head.physical_size = QSize::new(width, height);
+            zwlr_output_head_v1::Event::PhysicalSize(s) => {
+                head.physical_size = QSize::new(s.width, s.height);
             },
-            zwlr_output_head_v1::Event::Make { make } => {
-                head.make = make.into_boxed_str();
+            zwlr_output_head_v1::Event::Make(make) => {
+                head.make = make.into_boxed_c_str();
             },
-            zwlr_output_head_v1::Event::Model { model } => {
-                head.model = model.into_boxed_str();
+            zwlr_output_head_v1::Event::Model(model) => {
+                head.model = model.into_boxed_c_str();
             },
-            zwlr_output_head_v1::Event::SerialNumber { serial_number } => {
-                head.serial_number = serial_number.into_boxed_str();
+            zwlr_output_head_v1::Event::SerialNumber(serial_number) => {
+                head.serial_number = serial_number.into_boxed_c_str();
             },
-            zwlr_output_head_v1::Event::Mode { mode } => {
-                this.modes_map.insert(mode.id().protocol_id(), wlr_head.id().protocol_id());
+            zwlr_output_head_v1::Event::Mode(mode) => {
+                conn.set_callback_for(mode, WlState::on_mode_event);
+                state.modes_map.insert(mode.id().as_u32(), head.wlr.id().as_u32());
                 head.modes_changed = true;
                 head.mode_index_changed = true;
                 head.modes.push(WlrMode::new(mode));
             },
-            zwlr_output_head_v1::Event::Enabled { enabled } => {
+            zwlr_output_head_v1::Event::Enabled(enabled) => {
                 head.enabled = enabled == 1;
             },
-            zwlr_output_head_v1::Event::CurrentMode { mode } => {
+            zwlr_output_head_v1::Event::CurrentMode(mode) => {
                 head.geometry_changed = true;
                 head.mode_index_changed = true;
-                head.current_mode = mode.id().protocol_id();
+                head.current_mode = mode.as_u32();
             },
-            zwlr_output_head_v1::Event::Position { x, y } => {
+            zwlr_output_head_v1::Event::Position(p) => {
                 head.geometry_changed = true;
-                head.position = QPoint::new(x, y);
+                head.position = QPoint::new(p.x, p.y);
             },
-            zwlr_output_head_v1::Event::Transform { transform } => {
-                let WEnum::Value(transform) = transform else {
-                    return;
-                };
+            zwlr_output_head_v1::Event::Transform(transform) => {
                 head.geometry_changed = true;
                 head.transform = transform as u32;
             },
-            zwlr_output_head_v1::Event::Scale { scale } => {
+            zwlr_output_head_v1::Event::Scale(scale) => {
                 head.geometry_changed = true;
-                head.scale = scale;
+                head.scale = scale.as_f64();
             },
-            zwlr_output_head_v1::Event::AdaptiveSync { state } => {
-                head.adaptive_sync = state == WEnum::Value(zwlr_output_head_v1::AdaptiveSyncState::Enabled);
+            zwlr_output_head_v1::Event::AdaptiveSync(state) => {
+                head.adaptive_sync = state == zwlr_output_head_v1::AdaptiveSyncState::Enabled;
             },
             _ => {},
         }
@@ -399,19 +400,16 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for WlState {
             head.state = HeadState::Updated
         }
     }
-
-    wayland_client::event_created_child!(WlState, ZwlrOutputHeadV1, [
-        zwlr_output_head_v1::EVT_MODE_OPCODE => (ZwlrOutputModeV1, ()),
-    ]);
 }
+use std::ffi::CStr;
 
 use cxx::UniquePtr;
 use cxx_qt_lib::{QObjectMutPtr, QPoint, QRect, QSize, QString, QVariant};
 
-use wayland_client::{Connection, Dispatch, Proxy, QueueHandle, WEnum};
+use wayrs_client::EventCtx;
+use wayrs_client::object::Proxy;
 
-use wayland_protocols_wlr::output_management::v1::client::zwlr_output_head_v1::{self, ZwlrOutputHeadV1};
-use wayland_protocols_wlr::output_management::v1::client::zwlr_output_mode_v1::ZwlrOutputModeV1;
+use wayrs_protocols::wlr_output_management_unstable_v1::zwlr_output_head_v1::{self, ZwlrOutputHeadV1};
 
 use crate::mode::{ModesModel, QMode, WlrMode};
 use crate::state::WlState;

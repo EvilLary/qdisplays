@@ -15,34 +15,34 @@ impl WlState {
         }
     }
 
-    pub fn apply_configuration(&mut self, qh: QueueHandle<Self>, mut confs: Vec<(u32, PendingConfig)>) {
-        let wlr_config = self.manager.create_configuration(self.serial, &qh, ());
+    pub fn apply_configuration(&mut self, conn: &mut Connection<Self>, mut confs: Vec<(u32, PendingConfig)>) {
+        let wlr_config = self.manager.create_configuration_with_cb(conn, self.serial, Self::on_config_event);
 
         // idk but the proto says no head to be omitted in configuration,
         // but no compositor sends an error if I do that
         for h in self.heads.values() {
-            let c = confs.iter_mut().find(|(id, _)| h.wlr.id().protocol_id() == *id).map(|c| &mut c.1);
+            let c = confs.iter_mut().find(|(id, _)| h.wlr.id().as_u32() == *id).map(|c| &mut c.1);
 
             if !c.as_ref().and_then(|c| c.enabled).unwrap_or(h.enabled) {
-                wlr_config.disable_head(&h.wlr);
+                wlr_config.disable_head(conn, h.wlr);
                 continue;
             }
 
-            let head_config = wlr_config.enable_head(&h.wlr, &qh, ());
+            let head_config = wlr_config.enable_head(conn, h.wlr);
             let Some(c) = c else {
                 continue;
             };
 
             if let Some(v) = c.transform.take() {
-                head_config.set_transform(wl_output::Transform::try_from(v).unwrap());
+                head_config.set_transform(conn, Transform::try_from(v).unwrap());
             }
 
             if let Some(v) = c.scale.take() {
-                head_config.set_scale(v);
+                head_config.set_scale(conn, v.into());
             }
 
             if let Some(v) = c.position.take() {
-                head_config.set_position(v.x(), v.y());
+                head_config.set_position(conn, v.x(), v.y());
             }
 
             if let Some(v) = c.adaptive_sync.take() {
@@ -51,31 +51,23 @@ impl WlState {
                     false => zwlr_output_head_v1::AdaptiveSyncState::Disabled,
                 };
 
-                head_config.set_adaptive_sync(v);
+                head_config.set_adaptive_sync(conn, v);
             }
 
-            if let Some(w) = h.modes.iter().find(|m| Some(m.wlr.id().protocol_id()) == c.mode).map(|m| &m.wlr) {
-                head_config.set_mode(w)
+            if let Some(w) = h.modes.iter().find(|m| Some(m.wlr.id().as_u32()) == c.mode).map(|m| &m.wlr) {
+                head_config.set_mode(conn, *w)
             }
         }
 
-        wlr_config.apply();
+        wlr_config.apply(conn);
     }
 }
 
-wayland_client::delegate_noop!(WlState: ZwlrOutputConfigurationHeadV1);
+impl WlState {
+    pub fn on_config_event(ctx: EventCtx<Self, ZwlrOutputConfigurationV1>) {
+        let EventCtx { conn, proxy, event, .. } = ctx;
 
-impl Dispatch<ZwlrOutputConfigurationV1, ()> for WlState {
-    fn event(
-        _this: &mut Self,
-        wlr_config: &ZwlrOutputConfigurationV1,
-        event: <ZwlrOutputConfigurationV1 as Proxy>::Event,
-        _data: &(),
-        _conn: &Connection,
-        _qhandle: &QueueHandle<Self>,
-    ) {
-        wlr_config.destroy();
-
+        proxy.destroy(conn);
         match event {
             zwlr_output_configuration_v1::Event::Succeeded => qt::wayland_message(WlMsg::ConfigApplied),
             zwlr_output_configuration_v1::Event::Failed => qt::wayland_message(WlMsg::ConfigFailed),
@@ -84,25 +76,20 @@ impl Dispatch<ZwlrOutputConfigurationV1, ()> for WlState {
             _ => {},
         }
     }
-}
-impl Dispatch<ZwlrOutputManagerV1, ()> for WlState {
-    fn event(
-        this: &mut Self,
-        _wlr_mgr: &ZwlrOutputManagerV1,
-        event: <ZwlrOutputManagerV1 as Proxy>::Event,
-        _data: &(),
-        _conn: &Connection,
-        _qhandle: &wayland_client::QueueHandle<Self>,
-    ) {
+
+    pub fn on_manager_event(ctx: EventCtx<Self, ZwlrOutputManagerV1>) {
+        let EventCtx { conn, state, event, .. } = ctx;
+
         match event {
-            zwlr_output_manager_v1::Event::Head { head } => {
-                this.heads.insert(head.id().protocol_id(), WlrHead::new(head));
+            zwlr_output_manager_v1::Event::Head(head) => {
+                conn.set_callback_for(head, WlState::on_head_event);
+                state.heads.insert(head.id().as_u32(), WlrHead::new(head));
             },
 
-            zwlr_output_manager_v1::Event::Done { serial } => {
-                this.serial = serial;
+            zwlr_output_manager_v1::Event::Done(serial) => {
+                state.serial = serial;
 
-                this.heads.retain(|&id, h| {
+                state.heads.retain(|&id, h| {
                     h.on_done();
 
                     match h.state {
@@ -118,8 +105,8 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for WlState {
                         },
                         HeadState::Removed => {
                             for m in &h.modes {
-                                this.modes_map.remove(&m.id());
-                                m.wlr.release();
+                                state.modes_map.remove(&m.id());
+                                m.wlr.release(conn);
                             }
 
                             qt::remove_head(id);
@@ -131,11 +118,11 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for WlState {
             },
 
             zwlr_output_manager_v1::Event::Finished => {
-                for h in this.heads.values() {
+                for h in state.heads.values() {
                     for m in &h.modes {
-                        m.wlr.release();
+                        m.wlr.release(conn);
                     }
-                    h.wlr.release();
+                    h.wlr.release(conn);
                 }
 
                 // tbh I don't know if this could be sent without manually calling 'stop'
@@ -144,36 +131,18 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for WlState {
             _ => {},
         }
     }
-
-    wayland_client::event_created_child!(WlState, ZwlrOutputManagerV1, [
-        zwlr_output_manager_v1::EVT_HEAD_OPCODE => (ZwlrOutputHeadV1, ()),
-    ]);
-}
-
-impl Dispatch<WlRegistry, GlobalListContents> for WlState {
-    fn event(
-        _state: &mut Self,
-        _proxy: &WlRegistry,
-        _event: <WlRegistry as Proxy>::Event,
-        _data: &GlobalListContents,
-        _conn: &Connection,
-        _qhandle: &wayland_client::QueueHandle<Self>,
-    ) {
-    }
 }
 
 use std::collections::HashMap;
 
 use cxx_qt_lib::QString;
-use wayland_client::globals::GlobalListContents;
-use wayland_client::protocol::wl_output;
-use wayland_client::protocol::wl_registry::WlRegistry;
-use wayland_client::{Connection, Dispatch, Proxy, QueueHandle};
+use wayrs_client::object::Proxy;
+use wayrs_client::protocol::wl_output::Transform;
+use wayrs_client::{Connection, EventCtx};
 
-use wayland_protocols_wlr::output_management::v1::client::zwlr_output_configuration_head_v1::ZwlrOutputConfigurationHeadV1;
-use wayland_protocols_wlr::output_management::v1::client::zwlr_output_configuration_v1::{self, ZwlrOutputConfigurationV1};
-use wayland_protocols_wlr::output_management::v1::client::zwlr_output_head_v1::{self, ZwlrOutputHeadV1};
-use wayland_protocols_wlr::output_management::v1::client::zwlr_output_manager_v1::{self, ZwlrOutputManagerV1};
+use wayrs_protocols::wlr_output_management_unstable_v1::zwlr_output_configuration_v1::{self, ZwlrOutputConfigurationV1};
+use wayrs_protocols::wlr_output_management_unstable_v1::zwlr_output_head_v1;
+use wayrs_protocols::wlr_output_management_unstable_v1::zwlr_output_manager_v1::{self, ZwlrOutputManagerV1};
 
 use crate::head::{HeadState, PendingConfig, WlrHead};
 use crate::qt;
