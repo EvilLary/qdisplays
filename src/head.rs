@@ -38,7 +38,7 @@ impl QHead {
     }
 
     pub fn set_modes(&mut self, modes: Vec<QMode>) {
-        self.modes.as_mut().unwrap().set_modes(modes)
+        self.modes.pin_mut().set_modes(modes)
     }
 
     pub fn set_mode(&mut self, v: &QVariant) -> bool {

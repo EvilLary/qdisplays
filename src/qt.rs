@@ -9,7 +9,6 @@ static UPD_ROLES: LazyLock<QList<i32>> = LazyLock::new(|| {
         Roles::Scale as i32,
         Roles::AdaptiveSync as i32,
         Roles::CurrentModeIndex as i32,
-        // Roles::Modes as i32,
     ])
 });
 
@@ -43,13 +42,14 @@ mod qobject {
         Applied,
     }
 
+    #[auto_cxx_name]
     extern "RustQt" {
         #[qobject]
         #[qml_element]
         #[qml_singleton]
         #[base = QAbstractListModel]
-        #[qproperty(QRect, global_rect, cxx_name = "globalRect", READ, NOTIFY)]
-        #[qproperty(bool, has_changes, cxx_name = "hasChanges", READ = get_has_changes, NOTIFY)]
+        #[qproperty(QRect, global_rect, READ, NOTIFY)]
+        #[qproperty(bool, has_changes, READ = get_has_changes, NOTIFY)]
         type QDisplays = super::QDisplaysRs;
 
         fn get_has_changes(self: &QDisplays) -> bool;
@@ -61,56 +61,46 @@ mod qobject {
         fn reset_configuration(self: Pin<&mut Self>);
 
         #[qsignal]
-        #[cxx_name = "waylandMessage"]
         fn wayland_message(self: Pin<&mut Self>, typ: i32, msg: QString);
     }
 
+    #[auto_cxx_name]
     unsafe extern "RustQt" {
         #[cxx_override]
         fn data(self: &QDisplays, index: &QModelIndex, role: i32) -> QVariant;
 
         #[cxx_override]
-        #[rust_name = "set_data"]
-        fn setData(self: Pin<&mut QDisplays>, index: &QModelIndex, value: &QVariant, role: i32) -> bool;
+        fn set_data(self: Pin<&mut QDisplays>, index: &QModelIndex, value: &QVariant, role: i32) -> bool;
 
         #[cxx_override]
-        #[rust_name = "role_names"]
-        fn roleNames(self: &QDisplays) -> QHash_i32_QByteArray;
+        fn role_names(self: &QDisplays) -> QHash_i32_QByteArray;
 
         #[cxx_override]
-        #[rust_name = "row_count"]
-        fn rowCount(self: &QDisplays, parent: &QModelIndex) -> i32;
+        fn row_count(self: &QDisplays, parent: &QModelIndex) -> i32;
 
         #[inherit]
         fn index(self: &QDisplays, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
 
         #[inherit]
-        #[rust_name = "data_changed"]
-        fn dataChanged(self: Pin<&mut QDisplays>, top_left: &QModelIndex, bottom_right: &QModelIndex, roles: &QList_i32);
+        fn data_changed(self: Pin<&mut QDisplays>, top_left: &QModelIndex, bottom_right: &QModelIndex, roles: &QList_i32);
 
         #[inherit]
-        #[rust_name = "begin_insert_rows"]
-        fn beginInsertRows(self: Pin<&mut QDisplays>, parent: &QModelIndex, first: i32, last: i32);
+        fn begin_insert_rows(self: Pin<&mut QDisplays>, parent: &QModelIndex, first: i32, last: i32);
 
         #[inherit]
-        #[rust_name = "end_insert_rows"]
-        fn endInsertRows(self: Pin<&mut QDisplays>);
+        fn end_insert_rows(self: Pin<&mut QDisplays>);
 
         #[inherit]
-        #[rust_name = "begin_remove_rows"]
-        fn beginRemoveRows(self: Pin<&mut QDisplays>, parent: &QModelIndex, first: i32, last: i32);
+        fn begin_remove_rows(self: Pin<&mut QDisplays>, parent: &QModelIndex, first: i32, last: i32);
 
         #[inherit]
-        #[rust_name = "end_remove_rows"]
-        fn endRemoveRows(self: Pin<&mut QDisplays>);
+        fn end_remove_rows(self: Pin<&mut QDisplays>);
 
         #[inherit]
-        #[rust_name = "begin_reset_model"]
-        fn beginResetModel(self: Pin<&mut QDisplays>);
+        fn begin_reset_model(self: Pin<&mut QDisplays>);
 
         #[inherit]
-        #[rust_name = "end_reset_model"]
-        fn endResetModel(self: Pin<&mut QDisplays>);
+        fn end_reset_model(self: Pin<&mut QDisplays>);
     }
 
     impl cxx_qt::Threading for QDisplays {}

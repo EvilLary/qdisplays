@@ -12,17 +12,14 @@ fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     // tbh it's better for the qml singleton to start wayland
     let wl_th = wayland::start_wayland()?;
 
-    // while QGuiApplication is fine, it misses some small features that you'd expect from a
+    // while QGuiApplication is fine, it's missing some small features that you'd expect from a
     // qt destkop app, maybe move to QWidgets instead
     let mut app = QApplication::new();
     let mut engine = QQmlApplicationEngine::new();
 
-    engine
-        .as_mut()
-        .expect("couldn't create QQmlApplicationEngine")
-        .load(&QUrl::from("qrc:/qt/qml/qdisplays/qml/Main.qml"));
+    engine.pin_mut().load(&QUrl::from("qrc:/qt/qml/qdisplays/qml/Main.qml"));
 
-    let code = app.as_mut().expect("couldn't create QGuiApplication").exec();
+    let code = app.pin_mut().exec();
 
     wayland::request(wayland::WlCommand::Exit);
     let _ = wl_th.join();

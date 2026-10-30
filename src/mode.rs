@@ -21,21 +21,19 @@ mod qobject {
         type ModesModel = super::ModesModelRs;
     }
 
+    #[auto_cxx_name]
     unsafe extern "RustQt" {
         #[cxx_override]
         fn data(self: &ModesModel, index: &QModelIndex, role: i32) -> QVariant;
 
         #[cxx_override]
-        #[rust_name = "row_count"]
-        fn rowCount(self: &ModesModel, parent: &QModelIndex) -> i32;
+        fn row_count(self: &ModesModel, parent: &QModelIndex) -> i32;
 
         #[inherit]
-        #[rust_name = "begin_reset_model"]
-        fn beginResetModel(self: Pin<&mut ModesModel>);
+        fn begin_reset_model(self: Pin<&mut ModesModel>);
 
         #[inherit]
-        #[rust_name = "end_reset_model"]
-        fn endResetModel(self: Pin<&mut ModesModel>);
+        fn end_reset_model(self: Pin<&mut ModesModel>);
     }
 
     #[namespace = "rust::cxxqtlib1"]
