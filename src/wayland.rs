@@ -40,8 +40,12 @@ pub fn start_wayland() -> Result<JoinHandle<()>, Box<dyn std::error::Error>> {
     let state = WlState::new(manager);
 
     Ok(thread::spawn(move || {
+        panic::set_hook(Box::new(|e| {
+            qt::wayland_message(WlMsg::Fatal(e.to_string().into()));
+        }));
+
         if let Err(e) = enter_loop(state, conn, ev_fd, rx) {
-            qt::wayland_message(WlMsg::Fatal(QString::from(&e.to_string())));
+            qt::wayland_message(WlMsg::Fatal(e.to_string().into()));
         }
     }))
 }
@@ -50,33 +54,33 @@ fn enter_loop(mut state: WlState, mut conn: Connection<WlState>, ev_fd: OwnedFd,
     let event_fd = ev_fd.as_fd();
     let wl_fd = unsafe { BorrowedFd::borrow_raw(conn.as_raw_fd()) };
 
+    macro_rules! ign_intr {
+        ($call:expr) => {
+            match $call {
+                Ok(f) => f,
+                Err(e) => match e.kind() {
+                    ::std::io::ErrorKind::Interrupted => continue,
+                    _ => return Err(e.into()),
+                },
+            }
+        };
+    }
+
     loop {
-        conn.flush(IoMode::Blocking)?;
+        ign_intr!(conn.flush(IoMode::Blocking));
 
         let mut pfds = [PollFd::new(&wl_fd, PollFlags::IN), PollFd::new(&event_fd, PollFlags::IN)];
 
-        match event::poll(&mut pfds, None) {
-            Ok(_) => {},
-            Err(e) => match e.kind() {
-                ErrorKind::Interrupted => continue,
-                _ => return Err(e.into()),
-            },
-        }
+        ign_intr!(event::poll(&mut pfds, None));
 
         if pfds[0].revents().contains(PollFlags::IN) {
-            conn.recv_events(IoMode::Blocking)?;
+            ign_intr!(conn.recv_events(IoMode::Blocking));
             conn.dispatch_events(&mut state);
         }
 
         if pfds[1].revents().contains(PollFlags::IN) {
             let mut buf = [0u8; 8];
-            match rustix::io::read(event_fd, &mut buf) {
-                Ok(_) => {},
-                Err(e) => match e.kind() {
-                    ErrorKind::WouldBlock | ErrorKind::Interrupted => continue,
-                    _ => return Err(e.into()),
-                },
-            }
+            ign_intr!(rustix::io::read(event_fd, &mut buf));
 
             while let Ok(cmd) = rx.try_recv() {
                 match cmd {
@@ -98,8 +102,8 @@ use wayrs_client::{Connection, IoMode};
 
 use wayrs_protocols::wlr_output_management_unstable_v1::ZwlrOutputManagerV1;
 
-use std::io::ErrorKind;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
+use std::panic;
 use std::sync::OnceLock;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};

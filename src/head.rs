@@ -168,7 +168,12 @@ pub struct PendingConfig {
 
 impl PendingConfig {
     pub fn is_empty(&self) -> bool {
-        self.mode.is_none() && self.position.is_none() && self.transform.is_none() && self.scale.is_none() && self.enabled.is_none() && self.adaptive_sync.is_none()
+        self.mode.is_none()
+            && self.position.is_none()
+            && self.transform.is_none()
+            && self.scale.is_none()
+            && self.enabled.is_none()
+            && self.adaptive_sync.is_none()
     }
 
     pub fn clear(&mut self) {
@@ -232,7 +237,11 @@ pub struct WlrHead {
 impl WlrHead {
     pub fn on_done(&mut self) {
         if self.geometry_changed {
-            self.recalc_geometry();
+            self.geometry_changed = false;
+            let Some((_, mode)) = self.current_mode() else {
+                return;
+            };
+            self.geometry = calc_geometry(mode.size.clone(), self.position.clone(), self.scale, self.transform);
         }
 
         if self.mode_index_changed {
@@ -288,15 +297,6 @@ impl WlrHead {
     pub fn current_mode(&self) -> Option<(usize, &WlrMode)> {
         self.modes.iter().enumerate().find(|(_, m)| m.id() == self.current_mode)
     }
-
-    pub fn recalc_geometry(&mut self) {
-        self.geometry_changed = false;
-        let Some((_, mode)) = self.current_mode() else {
-            return;
-        };
-
-        self.geometry = calc_geometry(mode.size.clone(), self.position.clone(), self.scale, self.transform);
-    }
 }
 
 impl From<&mut WlrHead> for QHead {
@@ -332,7 +332,9 @@ impl From<&WlrHead> for QHead {
 
 impl WlState {
     pub fn on_head_event(ctx: EventCtx<Self, ZwlrOutputHeadV1>) {
-        let EventCtx { conn, state, proxy, event, .. } = ctx;
+        let EventCtx {
+            conn, state, proxy, event, ..
+        } = ctx;
 
         let Some(head) = state.heads.get_mut(&proxy.id().as_u32()) else {
             return;

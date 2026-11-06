@@ -53,7 +53,7 @@ pub struct ModesModelRs {
 impl qobject::ModesModel {
     pub fn new(modes: Vec<QMode>) -> UniquePtr<ModesModel> {
         let mut me = qobject::modesmodel_make_unique();
-        me.as_mut().unwrap().set_modes(modes);
+        me.pin_mut().set_modes(modes);
         me
     }
 
@@ -122,7 +122,9 @@ impl WlrMode {
 
 impl WlState {
     pub fn on_mode_event(ctx: EventCtx<Self, ZwlrOutputModeV1>) {
-        let EventCtx { conn, state, proxy, event, .. } = ctx;
+        let EventCtx {
+            conn, state, proxy, event, ..
+        } = ctx;
 
         let mode_id = proxy.id().as_u32();
         let Some(head) = state.modes_map.get(&mode_id).and_then(|i| state.heads.get_mut(i)) else {
@@ -171,8 +173,8 @@ use cxx::UniquePtr;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QModelIndex, QSize, QString, QVariant};
 
-use wayrs_client::object::Proxy;
 use wayrs_client::EventCtx;
+use wayrs_client::object::Proxy;
 
 use wayrs_protocols::wlr_output_management_unstable_v1::zwlr_output_mode_v1::{self, ZwlrOutputModeV1};
 

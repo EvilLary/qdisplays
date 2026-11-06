@@ -75,13 +75,13 @@ Kirigami.ApplicationWindow {
                 enabled: QDisplays.hasChanges
                 icon.name: "dialog-ok-apply"
                 text: qsTr("Apply")
-                onTriggered: QDisplays.apply_configuration()
+                onTriggered: QDisplays.applyConfiguration()
             },
             Kirigami.Action {
                 enabled: QDisplays.hasChanges
                 icon.name: "edit-undo"
                 text: qsTr("Reset")
-                onTriggered: QDisplays.reset_configuration()
+                onTriggered: QDisplays.resetConfiguration()
             }
         ]
 

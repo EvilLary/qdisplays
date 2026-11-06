@@ -126,9 +126,11 @@ impl qobject::QDisplays {
 
     fn reset_configuration(mut self: Pin<&mut Self>) {
         self.as_mut().rust_mut().heads.iter_mut().for_each(|h| h.pending_config.clear());
+
         let len = self.as_ref().rust().heads.len() as i32;
         let start = self.index(0, 0, &Default::default());
         let end = self.index(len - 1, 0, &Default::default());
+
         self.as_mut().data_changed(&start, &end, &UPD_ROLES);
         self.as_mut().calc_global_rect();
         self.as_mut().has_changes_changed();
